@@ -14,17 +14,7 @@
 #include <pwd.h>
 
 static int
-remount_bind(const char *root, const char *dst, const char *src, unsigned long flags) {
-	char path[PATH_MAX];
-	char *end;
-
-	end = stpncpy(path, root, sizeof (path) - 1);
-	end = stpncpy(path, root, sizeof (path) - (end - path));
-
-	if (end == path + sizeof (path)) {
-		errno = ENAMETOOLONG;
-		return -1;
-	}
+remount_bind_path(const char *path, const char *src, unsigned long flags) {
 
 	if (mount(src, path, "", MS_REC | MS_BIND, NULL) != 0) {
 		return -1;
@@ -43,28 +33,29 @@ remount_bind(const char *root, const char *dst, const char *src, unsigned long f
 	return 0;
 }
 
+static inline int
+remount_bind(const char *root, const char *dst, const char *src, unsigned long flags) {
+	const size_t rootlen = strlen(root), dstlen = strlen(dst);
+	char path[rootlen + dstlen + 1];
+
+	memcpy(mempcpy(path, root, rootlen), dst, dstlen + 1);
+
+	return remount_bind_path(path, src, flags);
+}
+
 static int
 mount_workdir(const char *root, const char *dst, const char *src, const void *tmpfsdata, unsigned long flags) {
+	const size_t rootlen = strlen(root), dstlen = strlen(dst);
+	char path[rootlen + dstlen + 1];
+
+	memcpy(mempcpy(path, root, rootlen), dst, dstlen + 1);
 
 	if (src != NULL) {
-		return remount_bind(root, dst, src, flags);
+		return remount_bind_path(path, src, flags);
 	}
 
-	if (!(flags & MS_RDONLY)) {
-		char path[PATH_MAX];
-		char *end;
-
-		end = stpncpy(path, root, sizeof (path) - 1);
-		end = stpncpy(path, root, sizeof (path) - (end - path));
-
-		if (end == path + sizeof (path)) {
-			errno = ENAMETOOLONG;
-			return -1;
-		}
-
-		if (mount("tmpfs", path, "tmpfs", MS_NOSUID | MS_NODEV, tmpfsdata) != 0) {
-			return -1;
-		}
+	if (!(flags & MS_RDONLY) && mount("tmpfs", path, "tmpfs", MS_NOSUID | MS_NODEV, tmpfsdata) != 0) {
+		return -1;
 	}
 
 	return 0;

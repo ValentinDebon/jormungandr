@@ -7,35 +7,33 @@
 #include <errno.h>
 
 static int
-orm_data_access(const char *datadir, const char *location, size_t locationsz, char **pathp) {
+orm_data_access(const char *datadir, const char *location, size_t locationsize, char **pathp) {
 	const size_t datadirlen = strlen(datadir);
-	char path[datadirlen + locationsz + 1], *real;
+	char path[datadirlen + locationsize], *real;
 
-	memcpy(path, datadir, datadirlen);
-	memcpy(path + datadirlen, location, locationsz);
+	memcpy(mempcpy(path, datadir, datadirlen), location, locationsize);
 
 	real = realpath(path, NULL);
-
-	if (real != NULL) {
-		*pathp = real;
-		return 0;
-	} else {
+	if (real == NULL) {
 		return -1;
 	}
+
+	*pathp = real;
+
+	return 0;
 }
 
 static int
 orm_data_path(const char *prefix, const char *name, char **pathp) {
 
-	if (*name == '\0' || *name == '.'
-		|| strchr(name, '/') != NULL) {
+	if (*name == '\0' || *name == '.' || strchr(name, '/') != NULL) {
+		errno = EINVAL;
 		return -1;
 	}
 
 	const size_t prefixlen = strlen(prefix), namelen = strlen(name);
 	char location[prefixlen + namelen + 1];
-	memcpy(location, prefix, prefixlen);
-	memcpy(location + prefixlen, name, namelen + 1);
+	memcpy(mempcpy(location, prefix, prefixlen), name, namelen + 1);
 
 	char *datadir = getenv("XDG_DATA_HOME");
 	if (datadir == NULL || *datadir != '/') {
@@ -43,14 +41,13 @@ orm_data_path(const char *prefix, const char *name, char **pathp) {
 		char * const home = getenv("HOME");
 
 		if (home == NULL || *home != '/') {
+			errno = EINVAL;
 			return -1;
 		}
 
 		const size_t homelen = strlen(home);
-		datadir = alloca(sizeof (datadefault) + homelen);
-
-		memcpy(datadir, home, homelen);
-		memcpy(datadir + homelen, datadefault, sizeof (datadefault));
+		datadir = alloca(homelen + sizeof (datadefault));
+		memcpy(mempcpy(datadir, home, homelen), datadefault, sizeof (datadefault));
 	}
 
 	char *path = NULL;
@@ -77,11 +74,11 @@ orm_data_path(const char *prefix, const char *name, char **pathp) {
 }
 
 int
-orm_toolchain_path(const char *toolchain, char **pathp) {
-	return orm_data_path("/jormungandr/toolchain/", toolchain, pathp);
+orm_bsys_path(const char *bsys, char **pathp) {
+	return orm_data_path("/jormungandr/bsys/", bsys, pathp);
 }
 
 int
-orm_bsys_path(const char *bsys, char **pathp) {
-	return orm_data_path("/jormungandr/bsys/", bsys, pathp);
+orm_toolchain_path(const char *toolchain, char **pathp) {
+	return orm_data_path("/jormungandr/toolchain/", toolchain, pathp);
 }

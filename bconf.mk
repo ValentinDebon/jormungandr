@@ -1,7 +1,10 @@
 CFLAGS+=-std=c2x
 CPPFLAGS+=-D_GNU_SOURCE -I$(srcdir)/include
 
-orm-libs-objs:=liborm/sandbox.o liborm/paths.o
+orm-libs-objs:= \
+	lib/data.o \
+	lib/sandbox.o \
+	lib/workdir.o
 orm-objs:=src/orm.o
 
 orm-libs:=liborm.a

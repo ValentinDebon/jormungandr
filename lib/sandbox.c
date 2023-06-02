@@ -177,6 +177,10 @@ orm_sandbox(const struct orm_sandbox_description *description, uid_t olduid, gid
 		return -1;
 	}
 
+	if (mount_workdir(description->root, "/var/bsys", description->bsysdir, tmpfsdata, MS_RDONLY) != 0) {
+		return -1;
+	}
+
 	if (mount_workdir(description->root, "/var/dest", description->destdir, tmpfsdata, 0) != 0) {
 		return -1;
 	}

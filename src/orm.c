@@ -5,6 +5,7 @@
 #include <stdnoreturn.h>
 #include <limits.h>
 #include <unistd.h>
+#include <libgen.h>
 #include <fcntl.h>
 #include <ctype.h>
 #include <errno.h>
@@ -19,7 +20,7 @@ struct orm_args {
 	const char *destdir, *objdir, *srcdir;
 	const char *workdir;
 	unsigned int rwsysroot : 1, rwsrcdir : 1;
-	unsigned int persistent : 1;
+	unsigned int persistent : 1, interactive : 1;
 };
 
 static char *
@@ -98,26 +99,39 @@ orm_print_workdir(const struct orm_args *args) {
 }
 
 static void noreturn
-orm_exec(int n, char *args[]) {
-	char *shell = getenv("SHELL"), *argv[4 + n];
+orm_exec(const char *bsysname, char **args, int count) {
+	char *argv[3 + count];
 	int argc = 0;
 
-	if (shell == NULL) {
-		shell = "/bin/sh";
+	if (bsysname != NULL) {
+		static const char bsysdir[] = "/var/bsys/";
+		const size_t bsysnamelen = strlen(bsysname);
+		char * const bsys = alloca(sizeof (bsysdir) + bsysnamelen);
+
+		memcpy(bsys, bsysdir, sizeof (bsysdir) - 1);
+		memcpy(bsys + sizeof (bsysdir) - 1, bsysname, bsysnamelen + 1);
+
+		argv[argc++] = bsys;
+	} else {
+		char * const shell = getenv("SHELL");
+
+		if (shell != NULL && access(shell, X_OK) == 0) {
+			argv[argc++] = shell;
+		} else {
+			argv[argc++] = "/bin/sh";
+		}
+		argv[argc++] = "-i";
 	}
 
-	argv[argc++] = shell;
-	argv[argc++] = "-s";
-	argv[argc++] = "--";
-	while (n != 0) {
+	while (count != 0) {
 		argv[argc++] = *args++;
-		n--;
+		count--;
 	}
 	argv[argc] = NULL;
 
-	execv(shell, argv);
+	execv(*argv, argv);
 
-	err(EXIT_FAILURE, "execv '%s'", shell);
+	err(EXIT_FAILURE, "execv '%s'", *argv);
 }
 
 static void
@@ -128,8 +142,8 @@ orm_run(const struct orm_args *args, int argc, char **argv) {
 		.asroot = 1, .rosysroot = !args->rwsysroot,
 		.rosrcdir = !args->rwsrcdir,
 	};
-	char *workspace, *root, *bsys;
-	int flags = 0, fd;
+	char *workspace, *root, *bsys, *bsysname;
+	int flags = 0;
 
 	/* Project paths. */
 
@@ -185,14 +199,12 @@ orm_run(const struct orm_args *args, int argc, char **argv) {
 	} else if (orm_bsys_path(args->bsys, &bsys) != 0) {
 		err(EXIT_FAILURE, "Unable to find bsys '%s'", args->bsys);
 	}
+	description.bsysdir = dirname(strdupa(bsys));
 
-	fd = open(bsys, O_RDONLY | O_CLOEXEC);
-	if (fd < 0) {
-		err(EXIT_FAILURE, "Unable to open '%s'", bsys);
-	}
-
-	if (dup2(fd, STDIN_FILENO) != 0) {
-		err(EXIT_FAILURE, "dup2");
+	if (!args->interactive) {
+		bsysname = basename(strdupa(bsys));
+	} else {
+		bsysname = NULL;
 	}
 
 	/* Sandbox. */
@@ -201,14 +213,14 @@ orm_run(const struct orm_args *args, int argc, char **argv) {
 		err(EXIT_FAILURE, "Unable to enter toolbox");
 	}
 
-	orm_exec(argc - optind, argv + optind);
+	orm_exec(bsysname, argv + optind, argc - optind);
 }
 
 static void noreturn
 orm_usage(const char *progname, int status) {
 
 	fprintf(stderr,
-		"usage: %1$s [-PSU] [-t <toolchain>] [-b <bsys>] [-w <workspace>] [-u <sysroot>] [-d <destdir>] [-o <objdir>] [-s <srcdir>]\n"
+		"usage: %1$s [-PSUi] [-t <toolchain>] [-b <bsys>] [-w <workspace>] [-u <sysroot>] [-d <destdir>] [-o <objdir>] [-s <srcdir>]\n"
 		"       %1$s [-P] [-w <workspace>] [-s <srcdir>] -p <workdir>\n"
 		"       %1$s -h\n",
 		progname);
@@ -227,7 +239,7 @@ orm_parse_args(int argc, char **argv) {
 	};
 	int c;
 
-	while (c = getopt(argc, argv, ":hPSUt:b:w:u:d:o:s:p:"), c != -1) {
+	while (c = getopt(argc, argv, ":hPSUit:b:w:u:d:o:s:p:"), c != -1) {
 		switch (c) {
 		case 'h':
 			orm_usage(*argv, EXIT_SUCCESS);
@@ -239,6 +251,9 @@ orm_parse_args(int argc, char **argv) {
 			break;
 		case 'U':
 			args.rwsysroot = 1;
+			break;
+		case 'i':
+			args.interactive = 1;
 			break;
 		case 't':
 			args.toolchain = optarg;

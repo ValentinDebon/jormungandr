@@ -1,15 +1,14 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdbool.h>
-#include <stdnoreturn.h>
-#include <limits.h>
-#include <unistd.h>
-#include <libgen.h>
-#include <fcntl.h>
-#include <ctype.h>
-#include <errno.h>
-#include <err.h>
+#include <stdio.h> /* fprintf, popen, ... */
+#include <stdlib.h> /* malloc, ... */
+#include <stdnoreturn.h> /* noreturn */
+#include <string.h> /* strdup, memcpy, ... */
+#include <unistd.h> /* getopt, ... */
+#include <libgen.h> /* dirname, basename */
+#include <limits.h> /* PATH_MAX */
+#include <alloca.h> /* alloca */
+#include <ctype.h> /* isspace */
+#include <errno.h> /* ENOENT */
+#include <err.h> /* err, errx, warnx */
 
 #include <orm.h>
 
@@ -23,6 +22,12 @@ struct orm_args {
 	unsigned int persistent : 1, interactive : 1;
 };
 
+/**
+ * Run a command and returns the returned path in a string.
+ * @param command Command to run using popen(3).
+ * @return On success, the absolute path of the source directory,
+ *   must be free(3)'d. On error, NULL, setting errno appropriately.
+ */
 static char *
 orm_srcdir(const char *command) {
 	FILE * const fp = popen(command, "r");
@@ -57,12 +62,24 @@ orm_srcdir(const char *command) {
 	return realpath(path, line);
 }
 
+/**
+ * Returns a candidate workspace name from a srcdir path.
+ * @param srcdir Path to the source directory used.
+ * @return On success, a new workspace, which must be _free(3)_'d.
+ *   On error, returns NULL and sets errno appropriately.
+ */
 static char *
 orm_workspace(const char *srcdir) {
 	return strdup(basename(strdupa(srcdir)));
 }
 
-static void noreturn
+/**
+ * Finds out and prints the absolute path of the given
+ * workdir in the resolved (or given) workspace.
+ * @param args Command line options.
+ * @return Never
+ */
+noreturn static void
 orm_print_workdir(const struct orm_args *args) {
 	char *workspace, *workdir;
 	int flags = 0;
@@ -98,7 +115,14 @@ orm_print_workdir(const struct orm_args *args) {
 	exit(EXIT_SUCCESS);
 }
 
-static void noreturn
+/**
+ * Execute the given bsys, or the user's shell if available.
+ * @param bsysname The base name of the bsys, or NULL if interactive.
+ * @param args Arguments to forward to the command.
+ * @param count Number of arguments in args.
+ * @return Never
+ */
+noreturn static void
 orm_exec(const char *bsysname, char **args, int count) {
 	char *argv[3 + count];
 	int argc = 0;
@@ -134,7 +158,14 @@ orm_exec(const char *bsysname, char **args, int count) {
 	err(EXIT_FAILURE, "execv '%s'", *argv);
 }
 
-static void
+/**
+ * Setup the sandbox and execute the bsys, or go interactive.
+ * @param args Command line options.
+ * @param argc Forwarded from main().
+ * @param argv Forwarded from main().
+ * @return Never
+ */
+noreturn static void
 orm_run(const struct orm_args *args, int argc, char **argv) {
 	struct orm_sandbox_description description = {
 		.sysroot = args->sysroot, .destdir = args->destdir,
@@ -142,11 +173,9 @@ orm_run(const struct orm_args *args, int argc, char **argv) {
 		.asroot = 1, .rosysroot = !args->rwsysroot,
 		.rosrcdir = !args->rwsrcdir,
 	};
-	char *workspace, *root, *bsys, *bsysname;
-	int flags = 0;
 
-	/* Project paths. */
-
+	/* Resolve the given (or not) source directory into
+	 * an absolute path, either using orm_srcdir() or realpath(3) directly. */
 	if (description.srcdir == NULL) {
 		description.srcdir = orm_srcdir(args->srccmd);
 	} else {
@@ -157,16 +186,22 @@ orm_run(const struct orm_args *args, int argc, char **argv) {
 		err(EXIT_FAILURE, "Unable to lookup srcdir");
 	}
 
+	/* Resolve the workspace, as a convenience,
+	 * if none is specified, the srcdir's basename is used. */
+	char *workspace;
 	if (args->workspace == NULL) {
 		workspace = orm_workspace(description.srcdir);
 	} else {
 		workspace = strdup(args->workspace);
 	}
 
+	/* Thus we need to check the workspace is a valid candidate... */
 	if (workspace == NULL || *workspace == '\0' || *workspace == '.' || strcmp(workspace, "/") == 0) {
 		errx(EXIT_FAILURE, "Unable to find out workspace name");
 	}
 
+	/* Use persistent-cache if requested. */
+	int flags = 0;
 	if (args->persistent) {
 		flags |= ORM_WORKDIR_PERSISTENT;
 	}
@@ -187,40 +222,44 @@ orm_run(const struct orm_args *args, int argc, char **argv) {
 		description.destdir = destdir;
 	}
 
-	/* Toolchain and build system. */
-
+	/* Resolve the toolchain's path. */
+	char *root;
 	if (orm_toolchain_path(args->toolchain, &root) != 0) {
 		err(EXIT_FAILURE, "Unable to find toolchain '%s'", args->toolchain);
 	}
 	description.root = root;
 
+	/* If bsys is a path (relative or not), use it directly,
+	 * else, search the user's configurations for our bsys. */
+	char *bsyspath;
 	if (strchr(args->bsys, '/') != NULL) {
-		bsys = strdup(args->bsys);
-	} else if (orm_bsys_path(args->bsys, &bsys) != 0) {
+		bsyspath = strdup(args->bsys);
+	} else if (orm_bsys_path(args->bsys, &bsyspath) != 0) {
 		err(EXIT_FAILURE, "Unable to find bsys '%s'", args->bsys);
 	}
-	description.bsysdir = dirname(strdupa(bsys));
+	description.bsysdir = dirname(strdupa(bsyspath));
 
+	char *bsysname;
 	if (!args->interactive) {
-		bsysname = basename(strdupa(bsys));
+		bsysname = basename(strdupa(bsyspath));
 	} else {
 		bsysname = NULL;
 	}
 
-	/* Sandbox. */
-
+	/* Enter the sandbox, as we don't need anything from the system now. */
 	if (orm_sandbox(&description, getuid(), getgid()) != 0) {
 		err(EXIT_FAILURE, "Unable to enter toolbox");
 	}
 
+	/* Execute either the bsys or the shell. */
 	orm_exec(bsysname, argv + optind, argc - optind);
 }
 
-static void noreturn
+noreturn static void
 orm_usage(const char *progname, int status) {
 
 	fprintf(stderr,
-		"usage: %1$s [-PSUi] [-t <toolchain>] [-b <bsys>] [-w <workspace>] [-u <sysroot>] [-d <destdir>] [-o <objdir>] [-s <srcdir>]\n"
+		"usage: %1$s [-PSUi] [-t <toolchain>] [-b <bsys>] [-w <workspace>] [-u <sysroot>] [-d <destdir>] [-o <objdir>] [-s <srcdir>] [<arguments>...]\n"
 		"       %1$s [-P] [-w <workspace>] [-s <srcdir>] -p <workdir>\n"
 		"       %1$s -h\n",
 		progname);
@@ -239,46 +278,21 @@ orm_parse_args(int argc, char **argv) {
 	};
 	int c;
 
-	while (c = getopt(argc, argv, ":hPSUit:b:w:u:d:o:s:p:"), c != -1) {
+	while (c = getopt(argc, argv, ":hPSUit:b:w:u:d:o:s:p:"), c >= 0) {
 		switch (c) {
-		case 'h':
-			orm_usage(*argv, EXIT_SUCCESS);
-		case 'P':
-			args.persistent = 1;
-			break;
-		case 'S':
-			args.rwsrcdir = 1;
-			break;
-		case 'U':
-			args.rwsysroot = 1;
-			break;
-		case 'i':
-			args.interactive = 1;
-			break;
-		case 't':
-			args.toolchain = optarg;
-			break;
-		case 'b':
-			args.bsys = optarg;
-			break;
-		case 'w':
-			args.workspace = optarg;
-			break;
-		case 'u':
-			args.sysroot = optarg;
-			break;
-		case 'd':
-			args.destdir = optarg;
-			break;
-		case 'o':
-			args.objdir = optarg;
-			break;
-		case 's':
-			args.srcdir = optarg;
-			break;
-		case 'p':
-			args.workdir = optarg;
-			break;
+		case 'h': orm_usage(*argv, EXIT_SUCCESS);
+		case 'P': args.persistent = 1; break;
+		case 'S': args.rwsrcdir = 1; break;
+		case 'U': args.rwsysroot = 1; break;
+		case 'i': args.interactive = 1; break;
+		case 't': args.toolchain = optarg; break;
+		case 'b': args.bsys = optarg; break;
+		case 'w': args.workspace = optarg; break;
+		case 'u': args.sysroot = optarg; break;
+		case 'd': args.destdir = optarg; break;
+		case 'o': args.objdir = optarg; break;
+		case 's': args.srcdir = optarg; break;
+		case 'p': args.workdir = optarg; break;
 		case ':':
 			warnx("Option -%c requires an operand", optopt);
 			orm_usage(*argv, EXIT_FAILURE);

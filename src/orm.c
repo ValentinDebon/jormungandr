@@ -1,16 +1,15 @@
-#include <stdio.h> /* fprintf, popen, ... */
-#include <stdlib.h> /* malloc, ... */
+#include <stdio.h> /* puts, fprintf */
+#include <stdlib.h> /* realpath, ... */
 #include <stdnoreturn.h> /* noreturn */
 #include <string.h> /* strdup, memcpy, ... */
 #include <unistd.h> /* getopt, ... */
 #include <libgen.h> /* dirname, basename */
-#include <limits.h> /* PATH_MAX */
 #include <alloca.h> /* alloca */
-#include <ctype.h> /* isspace */
-#include <errno.h> /* ENOENT */
 #include <err.h> /* err, errx, warnx */
 
 #include <orm.h>
+
+#include "cmdpath.h"
 
 struct orm_args {
 	const char *srccmd;
@@ -21,46 +20,6 @@ struct orm_args {
 	unsigned int rwsysroot : 1, rwsrcdir : 1;
 	unsigned int persistent : 1, interactive : 1;
 };
-
-/**
- * Run a command and returns the returned path in a string.
- * @param command Command to run using popen(3).
- * @return On success, the absolute path of the source directory,
- *   must be free(3)'d. On error, NULL, setting errno appropriately.
- */
-static char *
-orm_srcdir(const char *command) {
-	FILE * const fp = popen(command, "r");
-	char *line, *path;
-	ssize_t len;
-	size_t n;
-
-	if (fp == NULL) {
-		return NULL;
-	}
-
-	n = PATH_MAX;
-	line = malloc(n);
-	if (line == NULL) {
-		return NULL;
-	}
-
-	len = getline(&line, &n, fp);
-	pclose(fp);
-
-	if (len < 0) {
-		errno = ENOENT;
-		return NULL;
-	}
-
-	while (len > 0 && isspace(line[--len])) {
-		line[len] = '\0';
-	}
-
-	path = strdupa(line);
-
-	return realpath(path, line);
-}
 
 /**
  * Returns a candidate workspace name from a srcdir path.
@@ -88,7 +47,7 @@ orm_print_workdir(const struct orm_args *args) {
 		char *srcdir;
 
 		if (args->srcdir == NULL) {
-			srcdir = orm_srcdir(args->srccmd);
+			srcdir = cmdpath(args->srccmd);
 		} else {
 			srcdir = realpath(srcdir, NULL);
 		}
@@ -175,9 +134,9 @@ orm_run(const struct orm_args *args, int argc, char **argv) {
 	};
 
 	/* Resolve the given (or not) source directory into
-	 * an absolute path, either using orm_srcdir() or realpath(3) directly. */
+	 * an absolute path, either using cmdpath() or realpath(3) directly. */
 	if (description.srcdir == NULL) {
-		description.srcdir = orm_srcdir(args->srccmd);
+		description.srcdir = cmdpath(args->srccmd);
 	} else {
 		description.srcdir = realpath(description.srcdir, NULL);
 	}
@@ -303,7 +262,7 @@ orm_parse_args(int argc, char **argv) {
 	}
 
 	if (args.srccmd == NULL) {
-		args.srccmd = "git rev-parse --show-toplevel";
+		args.srccmd = CONFIG_DEFAULT_SRCDIR_COMMAND;
 	}
 
 	if (args.toolchain == NULL) {

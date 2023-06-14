@@ -1,7 +1,10 @@
 #include <stdio.h> /* fprintf */
 #include <stdlib.h> /* exit, getenv */
+#include <stdbool.h> /* bool */
 #include <stdnoreturn.h> /* noreturn */
 #include <sys/wait.h> /* waitpid, ... */
+#include <sys/mount.h> /* mount */
+#include <sys/stat.h> /* stat */
 #include <string.h> /* strdup, memcpy */
 #include <libgen.h> /* dirname, basename */
 #include <alloca.h> /* alloca */
@@ -13,12 +16,103 @@
 #include "cmdpath.h"
 
 struct lndworm_args {
-	const char *srccmd, *fmtcmd;
+	const char *sysxcmd, *srcxcmd, *outccmd;
 	const char *toolchain, *bsys;
-	const char *sysroot, *srcdir;
+	const char *sysroot, *src;
 	unsigned int pkgobj : 1;
-	unsigned int rwsysroot : 1, rwsrcdir : 1;
+	unsigned int asroot : 1, rwsysroot : 1, rwsrcdir : 1;
 };
+
+struct lndworm_pkgfmt {
+	const char * const extension;
+	char * const xcmd, * const ccmd;
+};
+
+static const struct lndworm_pkgfmt pkgfmts[] = {
+	{
+		.extension = "tar.gz",
+		.xcmd = "tar -xzf -",
+		.ccmd = "tar -cz .",
+	},
+	{
+		.extension = "tar.xz",
+		.xcmd = "tar -xJf -",
+		.ccmd = "tar -cJ .",
+	},
+	{
+		.extension = "tar.bz2",
+		.xcmd = "tar -xjf -",
+		.ccmd = "tar -cj .",
+	},
+	{
+		.extension = "tar.comp",
+		.xcmd = "tar -xZf -",
+		.ccmd = "tar -cZ .",
+	},
+	{
+		.extension = "tar",
+		.xcmd = "tar -xf -",
+		.ccmd = "tar -c .",
+	},
+};
+
+static const char *
+lndworm_extension(const char *path) {
+	const char *name = strrchr(path, '/');
+	const char *extension;
+	char *end;
+
+	if (name == NULL) {
+		name = path;
+	} else {
+		name++;
+	}
+
+	extension = strchr(name, '.');
+
+	if (extension != NULL) {
+		/* Skip potential numbers in name,
+		 * such as a version, a date, etc... */
+		while (strtoul(extension + 1, &end, 10), *end == '.') {
+			extension = end;
+		}
+
+		if (extension[1] == '\0') {
+			extension = NULL;
+		} else {
+			extension++;
+		}
+	}
+
+	return extension;
+}
+
+static const struct lndworm_pkgfmt *
+lndworm_pkgfmt_find_for_extension(const char *extension) {
+	unsigned int i = 0;
+
+	while (i < sizeof (pkgfmts) / sizeof (*pkgfmts)
+		&& strcmp(pkgfmts[i].extension, extension) != 0) {
+		i++;
+	}
+
+	if (i == sizeof (pkgfmts) / sizeof (*pkgfmts)) {
+		return NULL;
+	}
+
+	return pkgfmts + i;
+}
+
+static bool
+lndworm_isdir(const char *path) {
+	struct stat st;
+
+	if (stat(path, &st) != 0) {
+		err(EXIT_FAILURE, "stat '%s'", path);
+	}
+
+	return (st.st_mode & S_IFMT) == S_IFDIR;
+}
 
 static int
 lndworm_wait(pid_t pid) {
@@ -45,6 +139,66 @@ lndworm_wait(pid_t pid) {
 }
 
 noreturn static void
+lndworm_exec_xcmd(const char *xcmd, const char *wd, int fd) {
+
+	if (dup2(fd, STDIN_FILENO) < 0) {
+		err(EXIT_FAILURE, "dup2");
+	}
+
+	/* Remove FD_CLOEXEC from dup'ed fd. */
+	if (fcntl(STDIN_FILENO, F_SETFD, 0) != 0) {
+		err(EXIT_FAILURE, "fcntl F_SETFD");
+	}
+
+	if (chdir(wd) != 0) {
+		err(EXIT_FAILURE, "chdir '%s'", wd);
+	}
+
+	execlp("sh", "sh", "-c", xcmd, NULL);
+	err(EXIT_FAILURE, "execp sh -c '%s'", xcmd);
+}
+
+static void
+lndworm_extract(const char *xcmd, const char *path, unsigned int ro, int fd) {
+	const pid_t pid = fork();
+	if (pid < 0) {
+		err(EXIT_FAILURE, "fork");
+	}
+
+	if (pid == 0) {
+		lndworm_exec_xcmd(xcmd, path, fd);
+	}
+
+	if (lndworm_wait(pid) != 0) {
+		exit(EXIT_FAILURE);
+	}
+
+	if (ro && mount("", path, "", MS_REMOUNT | MS_RDONLY | MS_BIND, NULL) != 0) {
+		err(EXIT_FAILURE, "mount '%s' ro", path);
+	}
+}
+
+noreturn static void
+lndworm_exec_ccmd(const char *ccmd, const char *wd, int fd) {
+
+	if (dup2(fd, STDOUT_FILENO) < 0) {
+		err(EXIT_FAILURE, "dup2");
+	}
+
+	/* Remove FD_CLOEXEC from dup'ed fd. */
+	if (fcntl(STDOUT_FILENO, F_SETFD, 0) != 0) {
+		err(EXIT_FAILURE, "fcntl F_SETFD");
+	}
+
+	if (chdir(wd) != 0) {
+		err(EXIT_FAILURE, "chdir '%s'", wd);
+	}
+
+	execlp("sh", "sh", "-c", ccmd, NULL);
+	err(EXIT_FAILURE, "execp sh -c '%s'", ccmd);
+}
+
+noreturn static void
 lndworm_exec_bsys(const char *bsysname, char **args, int count) {
 	static const char bsysdir[] = "/var/bsys/";
 	const size_t bsysnamelen = strlen(bsysname);
@@ -68,43 +222,33 @@ lndworm_exec_bsys(const char *bsysname, char **args, int count) {
 }
 
 noreturn static void
-lndworm_exec_pkg(const char *fmtcmd, unsigned int pkgobj, int fd) {
-	const char * const pkgdir = pkgobj ? "/var/obj" : "/var/dest";
-
-	if (dup2(fd, STDOUT_FILENO) < 0) {
-		err(EXIT_FAILURE, "dup2");
-	}
-
-	/* Remove FD_CLOEXEC from dup'ed fd. */
-	if (fcntl(STDOUT_FILENO, F_SETFD, 0) != 0) {
-		err(EXIT_FAILURE, "fcntl F_SETFD");
-	}
-
-	if (chdir(pkgdir) != 0) {
-		err(EXIT_FAILURE, "chdir '%s'", pkgdir);
-	}
-
-	execlp("sh", "sh", "-c", fmtcmd, NULL);
-	err(EXIT_FAILURE, "execp sh -c '%s'", fmtcmd);
-}
-
-noreturn static void
 lndworm_pkg(const struct lndworm_args *args, int argc, char **argv, int fd) {
 	struct orm_sandbox_description description = {
-		.sysroot = args->sysroot, .srcdir = args->srcdir,
-		.asroot = 1, .rosysroot = !args->rwsysroot,
-		.rosrcdir = !args->rwsrcdir,
+		.asroot = args->asroot,
 	};
 
-	/* Find out srcdir. */
-	if (description.srcdir == NULL) {
-		description.srcdir = cmdpath(args->srccmd);
+	/* Open or describe sysroot. */
+	int sysrootfd;
+	if (args->sysxcmd != NULL) {
+		sysrootfd = open(args->sysroot, O_RDONLY | O_CLOEXEC);
+		if (sysrootfd < 0) {
+			err(EXIT_FAILURE, "open '%s'", args->sysroot);
+		}
 	} else {
-		description.srcdir = realpath(description.srcdir, NULL);
+		description.sysroot = args->sysroot;
+		description.rosysroot = !args->rwsysroot;
 	}
 
-	if (description.srcdir == NULL) {
-		err(EXIT_FAILURE, "Unable to lookup srcdir");
+	/* Open or describe srcdir. */
+	int srcfd;
+	if (args->srcxcmd != NULL) {
+		srcfd = open(args->src, O_RDONLY | O_CLOEXEC);
+		if (srcfd < 0) {
+			err(EXIT_FAILURE, "open '%s'", args->src);
+		}
+	} else {
+		description.srcdir = args->src;
+		description.rosrcdir = !args->rwsrcdir;
 	}
 
 	/* Find out toolchain root path. */
@@ -129,6 +273,18 @@ lndworm_pkg(const struct lndworm_args *args, int argc, char **argv, int fd) {
 		err(EXIT_FAILURE, "Unable to enter toolbox");
 	}
 
+	/* Extract sysroot archive if not mounted directory. */
+	if (description.sysroot == NULL) {
+		lndworm_extract(args->sysxcmd, "/var/sysroot", !args->rwsysroot, sysrootfd);
+		close(sysrootfd);
+	}
+
+	/* Extract src archive if not mounted directory. */
+	if (description.srcdir == NULL) {
+		lndworm_extract(args->srcxcmd, "/var/src", !args->rwsrcdir, srcfd);
+		close(srcfd);
+	}
+
 	const pid_t pid = fork();
 	if (pid < 0) {
 		err(EXIT_FAILURE, "fork");
@@ -142,7 +298,8 @@ lndworm_pkg(const struct lndworm_args *args, int argc, char **argv, int fd) {
 		exit(EXIT_FAILURE);
 	}
 
-	lndworm_exec_pkg(args->fmtcmd, args->pkgobj, fd);
+	lndworm_exec_ccmd(args->outccmd,
+		args->pkgobj ? "/var/obj" : "/var/dest", fd);
 }
 
 static int
@@ -169,8 +326,8 @@ noreturn static void
 lndworm_usage(const char *progname, int status) {
 
 	fprintf(stderr,
-		"usage: %1$s [-SUa] [-f <format>] [-t <toolchain>] [-b <bsys>] [-u <sysroot>] [-s <srcdir>] <archive> [<arguments>...]\n"
-		"       %1$s -F <format command> [-SUa] [-t <toolchain>] [-b <bsys>] [-u <sysroot>] [-s <srcdir>] <archive> [<arguments>...]\n"
+		"usage: %1$s [-ASUr] [-g <sysroot format>] [-q <src format>] [-f <output format>]"
+			" [-t <toolchain>] [-b <bsys>] [-u <sysroot>] [-s <src>] <output> [<arguments>...]\n"
 		"       %1$s -h\n",
 		progname);
 
@@ -179,37 +336,31 @@ lndworm_usage(const char *progname, int status) {
 
 static struct lndworm_args
 lndworm_parse_args(int argc, char **argv) {
-	static const struct {
-		const char * const name;
-		char * const command;
-	} formats[] = {
-		{ .name = "tar.gz", .command = "tar -cz ." },
-		{ .name = "tar.xz", .command = "tar -cJ ." },
-		{ .name = "tar.bz2", .command = "tar -cj ." },
-		{ .name = "tar.comp", .command = "tar -cZ ." },
-		{ .name = "tar", .command = "tar -c ." },
-	};
-	const char *format = NULL;
 	struct lndworm_args args = {
-		.srccmd = getenv("ORM_SRCDIR_COMMAND"),
+		.sysxcmd = getenv("ORM_SYSROOT_EXTRACT_COMMAND"),
+		.srcxcmd = getenv("ORM_SRCDIR_EXTRACT_COMMAND"),
+		.outccmd = getenv("ORM_OUTPUT_CREATE_COMMAND"),
 		.toolchain = getenv("ORM_DEFAULT_TOOLCHAIN"),
 		.bsys = getenv("ORM_DEFAULT_BSYS"),
 		.sysroot = getenv("ORM_SYSROOT"),
 	};
+	const char *sysext = NULL, *srcext = NULL, *outext = NULL;
 	int c;
 
-	while (c = getopt(argc, argv, ":hF:SUaf:t:b:u:s:"), c >= 0) {
+	while ((c = getopt(argc, argv, ":hASUrg:q:f:t:b:u:s:")) >= 0) {
 		switch (c) {
 		case 'h': lndworm_usage(*argv, EXIT_SUCCESS);
-		case 'F': args.fmtcmd = optarg; break;
+		case 'A': args.pkgobj = 1; break;
 		case 'S': args.rwsrcdir = 1; break;
 		case 'U': args.rwsysroot = 1; break;
-		case 'a': args.pkgobj = 1; break;
-		case 'f': format = optarg; break;
+		case 'r': args.asroot = 1; break;
+		case 'g': sysext = optarg; break;
+		case 'q': srcext = optarg; break;
+		case 'f': outext = optarg; break;
 		case 't': args.toolchain = optarg; break;
 		case 'b': args.bsys = optarg; break;
 		case 'u': args.sysroot = optarg; break;
-		case 's': args.srcdir = optarg; break;
+		case 's': args.src = optarg; break;
 		case ':':
 			warnx("Option -%c requires an operand", optopt);
 			lndworm_usage(*argv, EXIT_FAILURE);
@@ -219,45 +370,107 @@ lndworm_parse_args(int argc, char **argv) {
 		}
 	}
 
-	if (args.fmtcmd != NULL && format != NULL) {
-		warnx("Incompatible -F and -f options");
-		lndworm_usage(*argv, EXIT_FAILURE);
-	}
-
 	if (optind == argc) {
-		warnx("Missing archive name");
+		warnx("Missing output name");
 		lndworm_usage(*argv, EXIT_FAILURE);
 	}
 
-	if (args.srccmd == NULL) {
-		args.srccmd = CONFIG_DEFAULT_SRCDIR_COMMAND;
+	if (args.sysroot == NULL) {
+		args.sysroot = "/";
 	}
 
-	if (args.fmtcmd == NULL) {
-		unsigned int i;
+	if (!lndworm_isdir(args.sysroot)) {
+		if (sysext != NULL || args.sysxcmd == NULL) {
+			const struct lndworm_pkgfmt *pkgfmt;
 
-		if (format == NULL) {
-			const char * const path = argv[optind];
-			const char * const extension = strchr(path, '.');
+			if (sysext == NULL) {
+				sysext = lndworm_extension(args.sysroot);
+				if (sysext == NULL) {
+					warnx("Unable to infer sysroot format from '%s'", args.sysroot);
+					lndworm_usage(*argv, EXIT_FAILURE);
+				}
+			}
 
-			if (extension == NULL) {
-				warnx("Unable to infer archive format from '%s'", path);
+			pkgfmt = lndworm_pkgfmt_find_for_extension(sysext);
+			if (pkgfmt == NULL) {
+				warnx("Invalid sysroot format '%s'", sysext);
 				lndworm_usage(*argv, EXIT_FAILURE);
 			}
-			format = extension + 1;
+
+			args.sysxcmd = pkgfmt->xcmd;
+		}
+	} else {
+		if (sysext != NULL) {
+			warnx("Extraneous sysroot format for directory '%s'", args.sysroot);
+			lndworm_usage(*argv, EXIT_FAILURE);
+		}
+		args.sysxcmd = NULL;
+	}
+
+	if (args.src == NULL) {
+		const char *srccmd = getenv("ORM_SRCDIR_COMMAND");
+
+		if (srccmd == NULL) {
+			srccmd = CONFIG_DEFAULT_SRCDIR_COMMAND;
 		}
 
-		i = 0;
-		while (i < sizeof (formats) / sizeof (*formats)
-			&& strcmp(formats[i].name, format) != 0) {
-			i++;
+		args.src = cmdpath(srccmd);
+	} else {
+		args.src = realpath(args.src, NULL);
+	}
+
+	if (args.src == NULL) {
+		warn("Unable to lookup src path");
+		lndworm_usage(*argv, EXIT_FAILURE);
+	}
+
+	if (!lndworm_isdir(args.src)) {
+		if (srcext != NULL || args.srcxcmd == NULL) {
+			const struct lndworm_pkgfmt *pkgfmt;
+
+			if (srcext == NULL) {
+				srcext = lndworm_extension(args.src);
+				if (srcext == NULL) {
+					warnx("Unable to infer src format from '%s'", args.src);
+					lndworm_usage(*argv, EXIT_FAILURE);
+				}
+			}
+
+			pkgfmt = lndworm_pkgfmt_find_for_extension(srcext);
+			if (pkgfmt == NULL) {
+				warnx("Invalid src format '%s'", srcext);
+				lndworm_usage(*argv, EXIT_FAILURE);
+			}
+
+			args.srcxcmd = pkgfmt->xcmd;
 		}
-		if (i == sizeof (formats) / sizeof (*formats)) {
-			warnx("Invalid format '%s'", format);
+	} else {
+		if (srcext != NULL) {
+			warnx("Extraneous src format for directory '%s'", args.src);
+			lndworm_usage(*argv, EXIT_FAILURE);
+		}
+		args.srcxcmd = NULL;
+	}
+
+	if (outext != NULL || args.outccmd == NULL) {
+		const struct lndworm_pkgfmt *pkgfmt;
+
+		if (outext == NULL) {
+			const char * const path = argv[optind];
+			outext = lndworm_extension(path);
+			if (outext == NULL) {
+				warnx("Unable to infer output format from '%s'", path);
+				lndworm_usage(*argv, EXIT_FAILURE);
+			}
+		}
+
+		pkgfmt = lndworm_pkgfmt_find_for_extension(outext);
+		if (pkgfmt == NULL) {
+			warnx("Invalid output format '%s'", outext);
 			lndworm_usage(*argv, EXIT_FAILURE);
 		}
 
-		args.fmtcmd = formats[i].command;
+		args.outccmd = pkgfmt->ccmd;
 	}
 
 	if (args.toolchain == NULL) {
@@ -266,10 +479,6 @@ lndworm_parse_args(int argc, char **argv) {
 
 	if (args.bsys == NULL) {
 		args.bsys = "default";
-	}
-
-	if (args.sysroot == NULL) {
-		args.sysroot = "/";
 	}
 
 	return args;

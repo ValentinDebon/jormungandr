@@ -210,8 +210,8 @@ orm_sandbox(const struct orm_sandbox_description *description, uid_t olduid, gid
 		newuid = 0;
 		newgid = 0;
 	} else {
-		newuid = 100;
-		newgid = 100;
+		newuid = 1000;
+		newgid = 1000;
 	}
 
 	if (procfs_id_map("/proc/self/uid_map", olduid, newuid) != 0) {

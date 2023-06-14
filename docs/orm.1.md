@@ -4,7 +4,7 @@ orm - Jormungandr project building sandboxing.
 
 # SYNOPSIS
 
-- **orm** [-PSUi] [-t \<toolchain\>] [-b \<bsys\>] [-w \<workspace\>] [-u \<sysroot\>] [-d \<destdir\>] [-o \<objdir\>] [-s \<srcdir\>] [\<arguments\>...]
+- **orm** [-PSUir] [-t \<toolchain\>] [-b \<bsys\>] [-w \<workspace\>] [-u \<sysroot\>] [-d \<destdir\>] [-o \<objdir\>] [-s \<srcdir\>] [\<arguments\>...]
 - **orm** [-P] [-w \<workspace\>] [-s \<srcdir\>] -p \<workdir\>
 - **orm** -h
 
@@ -21,6 +21,7 @@ Execute a build system driver script (bsys) inside a sandbox dedicated for sourc
 - -U : By default, the **sysroot** is mounted read-only in the sandbox. If you are creating a system image on-the-fly,
        you might want to directly export some libraries and headers. This option allows mounting **sysroot** with write access.
 - -i : Start an interactive shell in the sandbox, for manual experimentation, debug, etc...
+- -r : Usurpate 0:0 (root's) user and group id instead of the default 1000:1000 credentials in the sandbox.
 - -t \<toolchain\> : Specify the **toolchain** mounted read-only as the sandbox root directory.
 - -b \<bsys\> : Specify the **bsys** made available read-only in **/var/bsys** and executed if not interactive (no **-i**).
 - -w \<workspace\> : Specify the **workspace** in which orm's workdirs are created, if none specified, it is inferred from **srcdir** path.

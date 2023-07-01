@@ -228,12 +228,25 @@ orm_sandbox(const struct orm_sandbox_description *description, uid_t olduid, gid
 		return -1;
 	}
 
-	/* Setup environment variables. */
+	/* Setup environment variables.
+	 * Save TERM, setup default PATH and user's passwd infos. */
+
+	char *term = getenv("TERM");
+	if (term != NULL) {
+		const size_t termsize = strlen(term) + 1;
+		char * const copy = alloca(termsize);
+		term = memcpy(copy, term, termsize);
+	}
+
 	if (clearenv() != 0) {
 		return -1;
 	}
 
 	if (putenv("PATH=/usr/bin:/usr/sbin") != 0) {
+		return -1;
+	}
+
+	if (term != NULL && setenv("TERM", term, 1) != 0) {
 		return -1;
 	}
 

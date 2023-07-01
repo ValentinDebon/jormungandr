@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
 #include <stdio.h> /* fprintf */
 #include <stdlib.h> /* exit, getenv */
 #include <stdbool.h> /* bool */

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
 #include <stdio.h> /* puts, fprintf */
 #include <stdlib.h> /* realpath, ... */
 #include <stdnoreturn.h> /* noreturn */

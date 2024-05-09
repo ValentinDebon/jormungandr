@@ -1,3 +1,11 @@
 config DEFAULT_SRCDIR_COMMAND
 	"Default command used to resolve unspecified source directory"
 	defaults "git rev-parse --show-toplevel"
+
+config LNDWORM_INPUT_BLOCK_SIZE
+	"When extracting an archive, size of an input buffer read"
+	defaults "1048576"
+
+config LNDWORM_OUTPUT_BLOCK_SIZE
+	"When creating an archive, size of an output buffer write"
+	defaults "1048576"

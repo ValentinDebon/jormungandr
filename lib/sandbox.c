@@ -14,6 +14,17 @@
 #include <fcntl.h>
 #include <pwd.h>
 
+static inline void
+path_combine(char *buffer, const char *root, const char *path, size_t rootlen, size_t pathlen) {
+	const char * const end = mempcpy(buffer, root, rootlen);
+
+	while (rootlen != 0 && end[rootlen - 1] == '/') {
+		rootlen--;
+	}
+
+	memcpy(buffer + rootlen, path, pathlen + 1);
+}
+
 static int
 remount_bind_path(const char *path, const char *src, unsigned long flags) {
 
@@ -39,7 +50,7 @@ remount_bind(const char *root, const char *dst, const char *src, unsigned long f
 	const size_t rootlen = strlen(root), dstlen = strlen(dst);
 	char path[rootlen + dstlen + 1];
 
-	memcpy(mempcpy(path, root, rootlen), dst, dstlen + 1);
+	path_combine(path, root, dst, rootlen, dstlen);
 
 	return remount_bind_path(path, src, flags);
 }
@@ -49,7 +60,7 @@ mount_workdir(const char *root, const char *dst, const char *src, const void *tm
 	const size_t rootlen = strlen(root), dstlen = strlen(dst);
 	char path[rootlen + dstlen + 1];
 
-	memcpy(mempcpy(path, root, rootlen), dst, dstlen + 1);
+	path_combine(path, root, dst, rootlen, dstlen);
 
 	if (src != NULL) {
 		return remount_bind_path(path, src, flags);

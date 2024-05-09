@@ -44,4 +44,4 @@ Execute a build system driver script (bsys) inside a sandbox dedicated for sourc
 Valentin Debon (valentin.debon@heylelos.org)
 
 # SEE ALSO
-jormungandr(7).
+lndworm(1), jormungandr(7).

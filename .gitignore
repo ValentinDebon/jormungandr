@@ -1,0 +1,8 @@
+configure
+GNUmakefile
+
+lndworm
+orm
+
+*.[ao]
+*.so

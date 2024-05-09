@@ -67,13 +67,12 @@ orm_exec(const char *bsysname, char **args, int count) {
 
 		argv[argc++] = bsys;
 	} else {
-		char * const shell = getenv("SHELL");
+		char *shell = getenv("SHELL");
 
-		if (shell != NULL && access(shell, X_OK) == 0) {
-			argv[argc++] = shell;
-		} else {
-			argv[argc++] = "/bin/sh";
+		if (shell == NULL || access(shell, X_OK) != 0) {
+			shell = "/bin/sh";
 		}
+		argv[argc++] = shell;
 		argv[argc++] = "-i";
 	}
 

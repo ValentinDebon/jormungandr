@@ -1,6 +1,7 @@
 configure
 GNUmakefile
 
+gitworm
 lndworm
 orm
 

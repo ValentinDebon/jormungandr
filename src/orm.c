@@ -10,7 +10,7 @@
 
 #include <orm.h>
 
-#include "cmdpath.h"
+#include "common/cmdpath.h"
 
 struct orm_args {
 	const char *toolchain, *bsys;

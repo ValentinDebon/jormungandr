@@ -16,7 +16,10 @@
 #include <archive_entry.h>
 #include <orm.h>
 
-#include "cmdpath.h"
+#include "common/bsysexec.h"
+#include "common/cmdpath.h"
+#include "common/extract.h"
+#include "common/isdir.h"
 
 struct lndworm_args {
 	const char *format, *filter;
@@ -25,17 +28,6 @@ struct lndworm_args {
 	unsigned int pkgobj : 1;
 	unsigned int asroot : 1, rwsysroot : 1, rwsrcdir : 1;
 };
-
-static bool
-lndworm_isdir(const char *path) {
-	struct stat st;
-
-	if (stat(path, &st) != 0) {
-		err(EXIT_FAILURE, "stat '%s'", path);
-	}
-
-	return (st.st_mode & S_IFMT) == S_IFDIR;
-}
 
 static int
 lndworm_wait(pid_t pid) {
@@ -62,95 +54,8 @@ lndworm_wait(pid_t pid) {
 }
 
 static void
-lndworm_archive_copy_to_disk(struct archive *in, struct archive *out) {
-	const void *buffer;
-	size_t size;
-	off_t off;
-
-	int status;
-	while (status = archive_read_data_block(in, &buffer, &size, &off), status == ARCHIVE_OK) {
-		status = archive_write_data_block(out, buffer, size, off);
-		if (status != ARCHIVE_OK) {
-			errx(EXIT_FAILURE, "archive_write_data_block: %s", archive_error_string(out));
-		}
-	}
-
-	if (status != ARCHIVE_EOF) {
-		errx(EXIT_FAILURE, "archive_read_data_block: %s", archive_error_string(in));
-	}
-}
-
-static void
-lndworm_archive_extract(const char *output, unsigned int ro, int fd) {
-	struct archive * const out = archive_write_disk_new(), * const in = archive_read_new();
-
-	if (archive_write_disk_set_options(out, ARCHIVE_EXTRACT_PERM | ARCHIVE_EXTRACT_TIME) != ARCHIVE_OK) {
-		errx(EXIT_FAILURE, "archive_write_disk_set_options: %s", archive_error_string(out));
-	}
-
-	if (archive_write_disk_set_standard_lookup(out) != ARCHIVE_OK) {
-		errx(EXIT_FAILURE, "archive_write_disk_set_standard_lookup: %s", archive_error_string(out));
-	}
-
-	if (archive_read_support_filter_all(in) != ARCHIVE_OK) {
-		errx(EXIT_FAILURE, "archive_read_support_filter_all: %s", archive_error_string(in));
-	}
-
-	if (archive_read_support_format_all(in) != ARCHIVE_OK) {
-		errx(EXIT_FAILURE, "archive_read_support_format_all: %s", archive_error_string(in));
-	}
-
-	if (archive_read_open_fd(in, fd, CONFIG_LNDWORM_INPUT_BLOCK_SIZE) != ARCHIVE_OK) {
-		errx(EXIT_FAILURE, "archive_read_open_fd: %s", archive_error_string(in));
-	}
-
-	/* Remove FD_CLOEXEC from fd. */
-	if (fcntl(fd, F_SETFD, 0) != 0) {
-		err(EXIT_FAILURE, "fcntl F_SETFD");
-	}
-
-	int status;
-	struct archive_entry *entry;
-	const size_t outputlen = strlen(output);
-	while (status = archive_read_next_header(in, &entry), status == ARCHIVE_OK) {
-		const char *sourcepath = archive_entry_pathname(entry);
-		while (*sourcepath == '/') {
-			sourcepath++;
-		}
-		const size_t sourcepathlen = strlen(sourcepath);
-
-		char pathname[outputlen + 1 + sourcepathlen + 1];
-		*(char *)mempcpy(pathname, output, outputlen) = '/';
-		memcpy(pathname + outputlen + 1, sourcepath, sourcepathlen + 1);
-
-		archive_entry_copy_pathname(entry, pathname);
-
-		status = archive_write_header(out, entry);
-		if (status != ARCHIVE_OK) {
-			errx(EXIT_FAILURE, "archive_write_header: %s", archive_error_string(out));
-		}
-
-		lndworm_archive_copy_to_disk(in, out);
-	}
-
-	archive_read_close(in);
-	archive_write_close(out);
-
-	if (status != ARCHIVE_EOF) {
-		errx(EXIT_FAILURE, "archive_read_next_header: %s", archive_error_string(in));
-	}
-
-	archive_read_free(in);
-	archive_write_free(out);
-
-	if (ro && mount("", output, "", MS_REMOUNT | MS_RDONLY | MS_BIND, NULL) != 0) {
-		err(EXIT_FAILURE, "mount '%s' ro", output);
-	}
-}
-
-static void
 lndworm_archive_copy_from_disk(const char *sourcepath, struct archive *out) {
-	static char buffer[CONFIG_LNDWORM_OUTPUT_BLOCK_SIZE];
+	static char buffer[CONFIG_ARCHIVE_OUTPUT_BLOCK_SIZE];
 	const int fd = open(sourcepath, O_RDONLY);
 	ssize_t copied;
 
@@ -250,29 +155,6 @@ lndworm_archive_create(const char *input, const char *format, const char *filter
 }
 
 noreturn static void
-lndworm_exec_bsys(const char *bsysname, char **args, int count) {
-	static const char bsysdir[] = "/var/bsys/";
-	const size_t bsysnamelen = strlen(bsysname);
-	char * const bsys = alloca(sizeof (bsysdir) + bsysnamelen);
-	char *argv[2 + count];
-	int argc = 0;
-
-	memcpy(bsys, bsysdir, sizeof (bsysdir) - 1);
-	memcpy(bsys + sizeof (bsysdir) - 1, bsysname, bsysnamelen + 1);
-
-	argc = 0;
-	argv[argc++] = bsys;
-	while (count != 0) {
-		argv[argc++] = *args++;
-		count--;
-	}
-	argv[argc] = NULL;
-
-	execv(*argv, argv);
-	err(EXIT_FAILURE, "execv '%s'", *argv);
-}
-
-noreturn static void
 lndworm_exec(const struct lndworm_args *args,
 	int argc, char **argv, const char *output, int fd) {
 	struct orm_sandbox_description description = {
@@ -281,7 +163,7 @@ lndworm_exec(const struct lndworm_args *args,
 
 	/* Open or describe sysroot. */
 	int sysrootfd;
-	if (!lndworm_isdir(args->sysroot)) {
+	if (!isdir(args->sysroot)) {
 		sysrootfd = open(args->sysroot, O_RDONLY | O_CLOEXEC);
 		if (sysrootfd < 0) {
 			err(EXIT_FAILURE, "open '%s'", args->sysroot);
@@ -293,7 +175,7 @@ lndworm_exec(const struct lndworm_args *args,
 
 	/* Open or describe srcdir. */
 	int srcfd;
-	if (!lndworm_isdir(args->src)) {
+	if (!isdir(args->src)) {
 		srcfd = open(args->src, O_RDONLY | O_CLOEXEC);
 		if (srcfd < 0) {
 			err(EXIT_FAILURE, "open '%s'", args->src);
@@ -327,14 +209,12 @@ lndworm_exec(const struct lndworm_args *args,
 
 	/* Extract sysroot archive if not mounted directory. */
 	if (description.sysroot == NULL) {
-		lndworm_archive_extract("/var/sysroot", !args->rwsysroot, sysrootfd);
-		close(sysrootfd);
+		extract("/var/sysroot", !args->rwsysroot, sysrootfd);
 	}
 
 	/* Extract src archive if not mounted directory. */
 	if (description.srcdir == NULL) {
-		lndworm_archive_extract("/var/src", !args->rwsrcdir, srcfd);
-		close(srcfd);
+		extract("/var/src", !args->rwsrcdir, srcfd);
 	}
 
 	const pid_t pid = fork();
@@ -343,7 +223,7 @@ lndworm_exec(const struct lndworm_args *args,
 	}
 
 	if (pid == 0) {
-		lndworm_exec_bsys(bsysname, argv + optind, argc - optind);
+		bsysexec(bsysname, argv + optind, argc - optind);
 	}
 
 	if (lndworm_wait(pid) != 0) {

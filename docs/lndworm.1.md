@@ -52,4 +52,4 @@ then it will use the sandbox's binary executables, so be aware of support for bo
 Valentin Debon (valentin.debon@heylelos.org)
 
 # SEE ALSO
-orm(1), jormungandr(7).
+orm(1), gitworm(1), jormungandr(7).

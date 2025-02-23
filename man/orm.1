@@ -1,0 +1,151 @@
+.Dd February 19, 2025
+.Dt ORM 1
+.Os
+.Sh NAME
+.Nm orm
+.Nd jormungandr iterative build sandbox
+.Sh SYNOPSIS
+.Nm orm
+.Op Fl PSUir
+.Op Fl t Ar toolchain
+.Op Fl b Ar bsys
+.Op Fl w Ar workspace
+.Op Fl u Ar sysroot
+.Op Fl d Ar destdir
+.Op Fl o Ar objdir
+.Op Fl s Ar srcdir
+.Op Ar arguments ...
+.Nm orm
+.Op Fl P
+.Op Fl w Ar workspace
+.Op Fl s Ar srcdir
+.Fl p Ar workdir
+.Nm orm
+.Fl h
+.Sh DESCRIPTION
+Execute a build system driver script
+.Pq Ar bsys
+inside a sandbox dedicated for source code builds.
+.Bl -tag
+.It Fl P
+Use persistent build directories. By default,
+.Nm
+workdirs are located in the user's session runtime directory,
+.Po based on
+.Ev XDG_RUNTIME_DIR Pc
+When this option is set,
+.Nm
+uses the user's cache directory
+.Po based on
+.Ev XDG_CACHE_HOME Pc
+to create its default
+.Ar destdir
+and
+.Ar objdir .
+.It Fl S
+Mount
+.Ar srcdir
+with write-access. By default,
+.Ar srcdir
+is mounted read-only in the sandbox. If the build system
+doesn't support out-of-tree builds, this option allows
+write-access. Note that most modern build systems do support
+out-of-tree builds, and you should create your driver to
+support this. This option is only available as a last resort.
+.It Fl U
+Mount
+.Ar sysroot
+with write-access. By default,
+.Ar sysroot
+is mounted read-only in the sandbox. If you are creating
+a system image on-the-fly, you might want to directly export
+some libraries and headers.
+.It Fl i
+Start an interactive shell in the sandbox, for manual experimentation, debug, etc...
+.It Fl r
+Usurpate 0:0
+.Pq root's
+user and group id instead of the default 1000:1000 credentials in the sandbox.
+.It Fl t Ar toolchain
+Specify the
+.Ar toolchain
+mounted read-only as the sandbox root directory.
+.It Fl b Ar bsys
+Specify the
+.Ar bsys
+made available read-only in
+.Pa /var/bsys
+and executed if not interactive
+.Pq no Fl i .
+.It Fl w Ar workspace
+Specify the
+.Ar workspace
+in which
+.Nm
+workdirs are created, if none specified, it is inferred from
+.Ar srcdir .
+.It Fl u Ar sysroot
+Specify the
+.Ar sysroot
+directory. Read-only by default.
+.It Fl d Ar destdir
+Specify the
+.Ar destdir
+where files should be staged for packaging. Never read-only.
+.It Fl o Ar objdir
+Specify the
+.Ar objdir
+where object files and other build artifacts are created.
+.It Fl s Ar srcdir
+Specify the
+.Ar srcdir
+source code directory. Read-only by default.
+.It Ar arguments ...
+Arguments forwarded to the
+.Ar bsys
+or the shell if interactive
+.Pq Fl i .
+.It Fl p Ar workdir
+In this scenario, prints the absolute path of the given
+.Ar workdir
+associated with the current
+.Ar workspace
+or
+.Ar srcdir
+.Pq and persistence if Fl P .
+.It Fl h
+Print usage and exit.
+.Sh ENVIRONMENT
+.Bl -tag
+.It Ev ORM_SRCDIR_COMMAND
+Set the
+.Ar srcdir
+resolution command.
+.It Ev ORM_DEFAULT_TOOLCHAIN
+Set the default
+.Ar toolchain
+to use.
+.It Ev ORM_DEFAULT_BSYS
+Set the default
+.Ar bsys
+to use.
+.It Ev ORM_WORKSPACE
+Set the
+.Ar workspace
+name to use if none specified.
+.It Ev ORM_SYSROOT
+Set the
+.Ar sysroot
+to mount if none specified.
+.Sh EXIT STATUS
+The
+.Nm
+utility exits with the
+.Ar bsys
+return value on success setting up and entering
+the sandbox, and >0 if an error occurs before that.
+.Sh SEE ALSO
+.Xr lndworm 1 , Xr gitworm 1 .
+.Sh AUTHORS
+Written by
+.An Valentin Debon Aq Mt valentin.debon@heylelos.org .

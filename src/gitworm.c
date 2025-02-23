@@ -1,13 +1,12 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 #include <stdio.h> /* fprintf */
-#include <stdlib.h> /* exit, getenv */
+#include <stdlib.h> /* exit, getenv, ... */
 #include <stdnoreturn.h> /* noreturn */
-#include <sys/mount.h>
-#include <sys/wait.h>
-#include <string.h> /* strdup, memcpy */
-#include <libgen.h> /* dirname, basename */
+#include <sys/wait.h> /* waitpid, ... */
+#include <string.h> /* strdup, memcpy, ... */
+#include <libgen.h> /* dirname */
 #include <unistd.h> /* getopt */
-#include <fcntl.h>
+#include <fcntl.h> /* open, ... */
 #include <err.h> /* warn, warnx, err */
 
 #include <orm.h>

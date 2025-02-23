@@ -1,12 +1,10 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 #include <orm.h>
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include <string.h>
-#include <sys/stat.h>
-#include <errno.h>
+#include <stdlib.h> /* realpath, getenv, alloca */
+#include <string.h> /* strlen, memcpy, ... */
+#include <sys/stat.h> /* mkdir */
+#include <errno.h> /* errno, EEXIST, ... */
 
 static int
 orm_mkdirs(char *path) {

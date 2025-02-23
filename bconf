@@ -1,3 +1,7 @@
+config MANPAGES
+	"Enable installation of manpages (optional)"
+	defaults "1"
+
 config DEFAULT_SRCDIR_COMMAND
 	"Default command used to resolve unspecified source directory"
 	defaults "git rev-parse --show-toplevel"

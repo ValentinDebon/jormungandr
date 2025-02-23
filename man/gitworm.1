@@ -1,0 +1,124 @@
+.Dd February 19, 2025
+.Dt GITWORM 1
+.Os
+.Sh NAME
+.Nm gitworm
+.Nd jormungandr git repositories build sandbox
+.Sh SYNOPSIS
+.Nm gitworm
+.Op Fl SUr
+.Op Fl C Ar path
+.Op Fl t Ar toolchain
+.Op Fl b Ar bsys
+.Op Fl u Ar sysroot
+.Ar tree-ish
+.Op Ar arguments ...
+.Nm gitworm
+.Fl h
+.Sh DESCRIPTION
+Execute a build system driver script
+.Pq Ar bsys
+inside a sandbox dedicated for source code builds.
+.Pp
+In opposition to
+.Xr orm 1 ,
+which is meant to be used for iterative
+builds and fast iterations,
+.Nm
+is meant for automation and testing.
+.Pp
+It directly extracts the
+.Xr git 1
+repository located at
+.Ar path
+.Pq or, by default, the current working directory
+and
+.Ar sysroot
+in the sandbox from package archives. The archives
+are atomically extracted in the sandbox, when the sandbox
+disappears with the process, all extracted files are automatically
+destroyed, making the procedure more resilient than manual removals.
+.Pp
+It relies on
+.Xr git-archive 1
+and
+.Xr libarchive 3
+for the extractions procedures. As the repository
+image extraction procedure happens in the sandbox, if
+.Xr libarchive 3
+resorts to external executables,
+then it will use the sandbox's binary
+executables. So be aware of support
+for both host system and toolchain.
+.Bl -tag
+.It Fl S
+Mount sources with write-access. By default,
+sources are mounted read-only in the sandbox. If the build
+system doesn't support out-of-tree builds or require
+installation of extra files in the sources directory,
+this option allows write-access.
+.It Fl U
+Mount
+.Ar sysroot
+with write-access. By default,
+.Ar sysroot
+is mounted read-only in the sandbox. If you are creating
+a system image on-the-fly, you might want to directly export
+some libraries and headers.
+.It Fl r
+Usurpate 0:0
+.Pq root's
+user and group id instead of the default 1000:1000 credentials in the sandbox.
+.It Fl C Ar path
+Specify the
+.Ar path
+to the
+.Xr git 1
+repository to extract as the source directory. Current working directory by default.
+.It Fl t Ar toolchain
+Specify the
+.Ar toolchain
+mounted read-only as the sandbox root directory.
+.It Fl b Ar bsys
+Specify the
+.Ar bsys
+made available read-only in
+.Pa /var/bsys .
+.It Fl u Ar sysroot
+Specify the
+.Ar sysroot ,
+a directory or an archive. Read-only by default.
+.It Ar tree-ish
+Argument forwarded to
+.Xr git-archive 1 ,
+tree or commit to extract.
+.It Ar arguments ...
+Arguments forwarded to the
+.Ar bsys .
+.It Fl h
+Print usage and exit.
+.Sh ENVIRONMENT
+.Bl -tag
+.It Ev GIT_EXEC_PATH
+Path to wherever your core
+.Xr git 1
+programs are installed.
+.It Ev ORM_DEFAULT_TOOLCHAIN
+Set the default
+.Ar toolchain
+to use.
+.It Ev ORM_DEFAULT_BSYS
+Set the default
+.Ar bsys
+to use.
+.It Ev ORM_SYSROOT
+Set the
+.Ar sysroot
+to mount if none specified.
+.Sh EXIT STATUS
+.Ex -std
+.Sh SEE ALSO
+.Xr orm 1 , Xr lndworm 1 .
+.Sh AUTHORS
+Written by
+.An Valentin Debon Aq Mt valentin.debon@heylelos.org .

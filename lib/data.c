@@ -1,11 +1,9 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 #include <orm.h>
 
-#include <string.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <limits.h>
-#include <errno.h>
+#include <string.h> /* strlen, memcpy, ... */
+#include <stdlib.h> /* realpath, getenv, alloca */
+#include <errno.h> /* EINVAL */
 
 static int
 orm_data_access(const char *datadir, const char *location, size_t locationsize, char **pathp) {

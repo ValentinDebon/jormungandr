@@ -2,7 +2,7 @@
 #ifndef ORM_H
 #define ORM_H
 
-#include <sys/types.h>
+#include <sys/types.h> /* size_t, uid_t, gid_t */
 
 #define ORM_WORKDIR_PERSISTENT 0x01
 

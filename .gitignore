@@ -1,5 +1,6 @@
 configure
 GNUmakefile
+html
 
 gitworm
 lndworm

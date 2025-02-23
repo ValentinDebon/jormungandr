@@ -1,0 +1,150 @@
+.Dd February 19, 2025
+.Dt LNDWORM 1
+.Os
+.Sh NAME
+.Nm lndworm
+.Nd jormungandr package build sandbox
+.Sh SYNOPSIS
+.Nm lndworm
+.Op Fl ASUr
+.Op Fl a Ar output-archive-format
+.Op Fl f Ar output-compression-filter
+.Op Fl t Ar toolchain
+.Op Fl b Ar bsys
+.Op Fl u Ar sysroot
+.Op Fl s Ar src
+.Ar output
+.Op Ar arguments ...
+.Nm lndworm
+.Fl h
+.Sh DESCRIPTION
+Execute a build system driver script
+.Pq Ar bsys
+inside a sandbox dedicated for source code builds.
+.Pp
+In opposition to
+.Xr orm 1 ,
+which is meant to be used for iterative
+builds and fast iterations,
+.Nm
+is meant for automation and packaging.
+.Pp
+It can directly extract
+.Ar src
+and
+.Ar sysroot
+in the sandbox from package archives,
+and outputs a newly created archive with
+either the sandbox's
+.Ar destdir
+or
+.Ar objdir .
+.Pp
+The archives are atomically extracted in the sandbox,
+when the sandbox disappears with the process, all extracted
+files are automatically destroyed, making the procedure
+more resilient than manual removals.
+.Pp
+As it relies on the host system's
+.Xr libarchive 3
+for the extractions and creation procedures,
+it supports all archive formats and filters
+supported by the host system's library version. Some
+.Xr libarchive 3
+formats and filters depend on binary executables
+installed on the system. As the extraction process
+happens in the sandbox, if
+.Xr libarchive 3
+resorts to external executables, then it will use
+the sandbox's binary executables. So be aware of
+support for both host system and toolchain.
+.Bl -tag
+.It Fl A
+Use
+.Ar objdir
+to create the output package archive instead of the default
+.Ar destdir .
+.It Fl S
+Mount
+.Ar srcdir
+with write-access. By default,
+.Ar srcdir
+is mounted read-only in the sandbox. If the build system
+doesn't support out-of-tree builds, this option allows
+write-access. Note that most modern build systems do support
+out-of-tree builds, and you should create your driver to
+support this. This option is only available as a last resort.
+.It Fl U
+Mount
+.Ar sysroot
+with write-access. By default,
+.Ar sysroot
+is mounted read-only in the sandbox. If you are creating
+a system image on-the-fly, you might want to directly export
+some libraries and headers.
+.It Fl r
+Usurpate 0:0
+.Pq root's
+user and group id instead of the default 1000:1000 credentials in the sandbox.
+.It Fl a Ar output-archive-format
+Override output archive format detection
+from the output file name. Allows more
+fine-grained format specifications, see
+.Xr libarchive 3
+for supported values.
+.It Fl f Ar output-compression-filter
+If
+.Fl a
+was specified, used to specify the desired filter
+used in combination with the specified format, see
+.Xr libarchive 3
+for supported values.
+.It Fl t Ar toolchain
+Specify the
+.Ar toolchain
+mounted read-only as the sandbox root directory.
+.It Fl b Ar bsys
+Specify the
+.Ar bsys
+made available read-only in
+.Pa /var/bsys .
+.It Fl u Ar sysroot
+Specify the
+.Ar sysroot ,
+a directory or an archive. Read-only by default.
+.It Fl s Ar src
+Specify the
+.Ar src ,
+a source code directory or archive. Read-only by default.
+.It Ar output
+Path to the created package archive on the host system.
+.It Ar arguments ...
+Arguments forwarded to the
+.Ar bsys .
+.It Fl h
+Print usage and exit.
+.Sh ENVIRONMENT
+.Bl -tag
+.It Ev ORM_SRCDIR_COMMAND
+Set the
+.Ar src
+directory resolution command.
+.It Ev ORM_DEFAULT_TOOLCHAIN
+Set the default
+.Ar toolchain
+to use.
+.It Ev ORM_DEFAULT_BSYS
+Set the default
+.Ar bsys
+to use.
+.It Ev ORM_SYSROOT
+Set the
+.Ar sysroot
+to mount if none specified.
+.Sh EXIT STATUS
+.Ex -std
+.Sh SEE ALSO
+.Xr orm 1 , Xr gitworm 1 .
+.Sh AUTHORS
+Written by
+.An Valentin Debon Aq Mt valentin.debon@heylelos.org .

@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 #include "extract.h"
 
-#include <stdlib.h>
-#include <string.h>
-#include <sys/mount.h>
-#include <err.h>
+#include <stdlib.h> /* EXIT_FAILURE */
+#include <string.h> /* strlen, memcpy, ... */
+#include <sys/mount.h> /* mount, ... */
+#include <err.h> /* err */
 
 #include <archive.h>
 #include <archive_entry.h>

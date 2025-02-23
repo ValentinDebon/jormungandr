@@ -138,7 +138,7 @@ lndworm_archive_create(const char *input, const char *format, const char *filter
 			if (status != ARCHIVE_OK) {
 				errx(EXIT_FAILURE, "archive_read_disk_descend: %s", archive_error_string(in));
 			}
-		} else {
+		} else if (archive_entry_filetype(entry) == AE_IFREG) {
 			lndworm_archive_copy_from_disk(sourcepath, out);
 		}
 	}
@@ -230,7 +230,7 @@ lndworm_exec(const struct lndworm_args *args,
 		exit(EXIT_FAILURE);
 	}
 
-	lndworm_archive_create(args->pkgobj ? "/var/obj" : "/var/dest", args->format, args->filter, output, fd);
+	lndworm_archive_create(args->pkgobj ? "/var/obj/" : "/var/dest/", args->format, args->filter, output, fd);
 	exit(EXIT_SUCCESS);
 }
 

@@ -1,10 +1,9 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 #include "bsysexec.h"
 
-#include <stdlib.h> /* EXIT_FAILURE */
+#include <stdlib.h> /* alloca, EXIT_FAILURE */
 #include <string.h> /* strlen, memcpy */
 #include <unistd.h> /* execv */
-#include <alloca.h> /* alloca */
 #include <err.h> /* err */
 
 noreturn void

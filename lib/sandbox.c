@@ -1,18 +1,14 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 #include <orm.h>
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdbool.h>
-#include <sys/mount.h>
-#include <limits.h>
-#include <unistd.h>
-#include <alloca.h>
-#include <sched.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <pwd.h>
+#include <stdio.h> /* fopen, fclose, snprintf */
+#include <stdlib.h> /* getenv, setenv, ... */
+#include <string.h> /* strlen, memcpy, ... */
+#include <sys/mount.h> /* mount, ... */
+#include <unistd.h> /* write, close, chroot, ... */
+#include <sched.h> /* unshare */
+#include <errno.h> /* errno */
+#include <pwd.h> /* fgetpwent_r */
 
 static inline void
 path_combine(char *buffer, const char *root, const char *path, size_t rootlen, size_t pathlen) {

@@ -1,0 +1,10 @@
+[book]
+authors = ["Valentin Debon"]
+language = "en"
+multilingual = false
+src = "docs"
+title = "Jormungandr, a build containerization toolbox"
+[preprocessor.graphviz]
+command = "mdbook-graphviz"
+[build]
+build-dir = "html"

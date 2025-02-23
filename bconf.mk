@@ -55,3 +55,37 @@ lndworm gitworm: LDLIBS+=$(libarchive-LDLIBS)
 host-bin+=orm lndworm gitworm
 host-lib+=$(orm-libs)
 clean-up+=$(host-bin) $(host-lib) $(orm-libs-objs) $(orm-objs) $(lndworm-objs) $(gitworm-objs)
+
+################
+# Manual pages #
+################
+
+ifneq ($(CONFIG_MANPAGES),)
+man1dir:=$(mandir)/man1
+
+host-man:=man/orm.1 man/lndworm.1 man/gitworm.1
+
+.PHONY: install-man uninstall-man
+
+install-data: install-man
+uninstall-data: uninstall-man
+install-man: $(host-man)
+	$(v-e) INSTALL $(host-man)
+	$(v-a) $(INSTALL) -d -- "$(DESTDIR)$(man1dir)"
+	$(v-a) $(INSTALL-DATA) -- $^ "$(DESTDIR)$(man1dir)"
+uninstall-man:
+	$(v-e) UNINSTALL $(host-man)
+	$(v-a) $(RM) -- $(patsubst %,"$(DESTDIR)$(man1dir)/%",$(notdir $(host-man)))
+endif
+
+#################
+# Documentation #
+#################
+
+ifneq ($(shell command -v mdbook),)
+.PHONY: book
+
+book: book.toml
+	$(v-e) MDBOOK
+	$(v-a) mdbook build $(<D)
+endif

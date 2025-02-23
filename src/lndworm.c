@@ -25,7 +25,7 @@ struct lndworm_args {
 	const char *format, *filter;
 	const char *toolchain, *bsys;
 	const char *sysroot, *src;
-	unsigned int pkgobj : 1;
+	unsigned int intop : 1, pkgobj : 1;
 	unsigned int asroot : 1, rwsysroot : 1, rwsrcdir : 1;
 };
 
@@ -51,6 +51,60 @@ lndworm_wait(pid_t pid) {
 	}
 
 	return 0;
+}
+
+static void
+lndworm_extract_ignore_toplevel(const char *output, unsigned int ro, int fd) {
+	struct archive *out, *in;
+
+	extract_prepare(fd, &out, &in);
+
+	int status;
+	struct archive_entry *entry;
+
+	status = archive_read_next_header(in, &entry);
+	if (status != ARCHIVE_OK) {
+		errx(EXIT_FAILURE, "archive_read_next_header: %s", archive_error_string(in));
+	}
+
+	char * const toplevel = strdup(archive_entry_pathname(entry));
+	if (archive_entry_filetype(entry) != AE_IFDIR) {
+		errx(EXIT_FAILURE, "Ignored toplevel entry '%s' is not a directory", toplevel);
+	}
+
+	const size_t toplevellen = strlen(toplevel);
+	const size_t outputlen = strlen(output);
+	while (status = archive_read_next_header(in, &entry), status == ARCHIVE_OK) {
+		const char *inpathname = archive_entry_pathname(entry);
+		size_t inpathnamelen = strlen(inpathname);
+
+		if (inpathnamelen < toplevellen
+			|| strncmp(inpathname, toplevel, toplevellen) != 0) {
+			warnx("Ignored toplevel entry '%s' as it is not under '%s'", inpathname, toplevel);
+			continue;
+		}
+
+		inpathname += toplevellen;
+		while (*inpathname == '/') {
+			inpathname++;
+		}
+		inpathnamelen = strlen(inpathname);
+
+		char outpathname[outputlen + 1 + inpathnamelen + 1];
+		*(char *)mempcpy(outpathname, output, outputlen) = '/';
+		memcpy(outpathname + outputlen + 1, inpathname, inpathnamelen + 1);
+
+		archive_entry_copy_pathname(entry, outpathname);
+
+		status = archive_write_header(out, entry);
+		if (status != ARCHIVE_OK) {
+			errx(EXIT_FAILURE, "archive_write_header: %s", archive_error_string(out));
+		}
+
+		archive_copy_to_disk(in, out);
+	}
+
+	extract_finish(output, ro, fd, status, out, in);
 }
 
 static void
@@ -214,7 +268,13 @@ lndworm_exec(const struct lndworm_args *args,
 
 	/* Extract src archive if not mounted directory. */
 	if (description.srcdir == NULL) {
-		extract("/var/src", !args->rwsrcdir, srcfd);
+		const unsigned int rosrcdir = !args->rwsrcdir;
+
+		if (args->intop) {
+			lndworm_extract_ignore_toplevel("/var/src", rosrcdir, srcfd);
+		} else {
+			extract("/var/src", rosrcdir, srcfd);
+		}
 	}
 
 	const pid_t pid = fork();
@@ -259,7 +319,7 @@ noreturn static void
 lndworm_usage(const char *progname, int status) {
 
 	fprintf(stderr,
-		"usage: %1$s [-ASUr] [-a <output archive format> [-f <output compression filter>]]"
+		"usage: %1$s [-ASUir] [-a <output archive format> [-f <output compression filter>]]"
 			" [-t <toolchain>] [-b <bsys>] [-u <sysroot>] [-s <src>] <output> [<arguments>...]\n"
 		"       %1$s -h\n",
 		progname);
@@ -276,12 +336,13 @@ lndworm_parse_args(int argc, char **argv) {
 	};
 	int c;
 
-	while ((c = getopt(argc, argv, ":hASUra:f:t:b:u:s:")) >= 0) {
+	while ((c = getopt(argc, argv, ":hASUira:f:t:b:u:s:")) >= 0) {
 		switch (c) {
 		case 'h': lndworm_usage(*argv, EXIT_SUCCESS);
 		case 'A': args.pkgobj = 1; break;
 		case 'S': args.rwsrcdir = 1; break;
 		case 'U': args.rwsysroot = 1; break;
+		case 'i': args.intop = 1; break;
 		case 'r': args.asroot = 1; break;
 		case 'a': args.format = optarg; break;
 		case 'f': args.filter = optarg; break;

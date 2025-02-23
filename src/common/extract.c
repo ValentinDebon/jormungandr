@@ -9,7 +9,7 @@
 #include <archive.h>
 #include <archive_entry.h>
 
-static void
+void
 archive_copy_to_disk(struct archive *in, struct archive *out) {
 	const void *buffer;
 	size_t size;
@@ -29,7 +29,7 @@ archive_copy_to_disk(struct archive *in, struct archive *out) {
 }
 
 void
-extract(const char *output, unsigned int ro, int fd) {
+extract_prepare(int fd, struct archive **outp, struct archive **inp) {
 	struct archive * const out = archive_write_disk_new(), * const in = archive_read_new();
 
 	if (archive_write_disk_set_options(out, ARCHIVE_EXTRACT_PERM | ARCHIVE_EXTRACT_TIME) != ARCHIVE_OK) {
@@ -57,29 +57,13 @@ extract(const char *output, unsigned int ro, int fd) {
 		err(EXIT_FAILURE, "fcntl F_SETFD");
 	}
 
-	int status;
-	struct archive_entry *entry;
-	const size_t outputlen = strlen(output);
-	while (status = archive_read_next_header(in, &entry), status == ARCHIVE_OK) {
-		const char *sourcepath = archive_entry_pathname(entry);
-		while (*sourcepath == '/') {
-			sourcepath++;
-		}
-		const size_t sourcepathlen = strlen(sourcepath);
+	*outp = out;
+	*inp = in;
+}
 
-		char pathname[outputlen + 1 + sourcepathlen + 1];
-		*(char *)mempcpy(pathname, output, outputlen) = '/';
-		memcpy(pathname + outputlen + 1, sourcepath, sourcepathlen + 1);
-
-		archive_entry_copy_pathname(entry, pathname);
-
-		status = archive_write_header(out, entry);
-		if (status != ARCHIVE_OK) {
-			errx(EXIT_FAILURE, "archive_write_header: %s", archive_error_string(out));
-		}
-
-		archive_copy_to_disk(in, out);
-	}
+void
+extract_finish(const char *output, unsigned int ro, int fd,
+	int status, struct archive *out, struct archive *in) {
 
 	archive_read_close(in);
 	archive_write_close(out);
@@ -96,4 +80,37 @@ extract(const char *output, unsigned int ro, int fd) {
 	}
 
 	close(fd);
+}
+
+void
+extract(const char *output, unsigned int ro, int fd) {
+	struct archive *out, *in;
+
+	extract_prepare(fd, &out, &in);
+
+	int status;
+	struct archive_entry *entry;
+	const size_t outputlen = strlen(output);
+	while (status = archive_read_next_header(in, &entry), status == ARCHIVE_OK) {
+		const char *inpathname = archive_entry_pathname(entry);
+		while (*inpathname == '/') {
+			inpathname++;
+		}
+		const size_t inpathnamelen = strlen(inpathname);
+
+		char outpathname[outputlen + 1 + inpathnamelen + 1];
+		*(char *)mempcpy(outpathname, output, outputlen) = '/';
+		memcpy(outpathname + outputlen + 1, inpathname, inpathnamelen + 1);
+
+		archive_entry_copy_pathname(entry, outpathname);
+
+		status = archive_write_header(out, entry);
+		if (status != ARCHIVE_OK) {
+			errx(EXIT_FAILURE, "archive_write_header: %s", archive_error_string(out));
+		}
+
+		archive_copy_to_disk(in, out);
+	}
+
+	extract_finish(output, ro, fd, status, out, in);
 }

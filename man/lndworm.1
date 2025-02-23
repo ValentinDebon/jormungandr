@@ -6,7 +6,7 @@
 .Nd jormungandr package build sandbox
 .Sh SYNOPSIS
 .Nm lndworm
-.Op Fl ASUr
+.Op Fl ASUir
 .Op Fl a Ar output-archive-format
 .Op Fl f Ar output-compression-filter
 .Op Fl t Ar toolchain
@@ -36,9 +36,9 @@ and
 in the sandbox from package archives,
 and outputs a newly created archive with
 either the sandbox's
-.Ar destdir
+.Em destdir
 or
-.Ar objdir .
+.Em objdir .
 .Pp
 The archives are atomically extracted in the sandbox,
 when the sandbox disappears with the process, all extracted
@@ -61,14 +61,14 @@ support for both host system and toolchain.
 .Bl -tag
 .It Fl A
 Use
-.Ar objdir
+.Em objdir
 to create the output package archive instead of the default
-.Ar destdir .
+.Em destdir .
 .It Fl S
 Mount
-.Ar srcdir
+.Ar src
 with write-access. By default,
-.Ar srcdir
+.Ar src
 is mounted read-only in the sandbox. If the build system
 doesn't support out-of-tree builds, this option allows
 write-access. Note that most modern build systems do support
@@ -82,6 +82,12 @@ with write-access. By default,
 is mounted read-only in the sandbox. If you are creating
 a system image on-the-fly, you might want to directly export
 some libraries and headers.
+.It Fl i
+Ignore
+.Ar src
+toplevel directory, this option may be useful if
+building from a source release, where the project name
+and version are usually prepended as a directory.
 .It Fl r
 Usurpate 0:0
 .Pq root's
